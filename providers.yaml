@@ -27,8 +27,8 @@ embedding:
     openai:
       status: ready
       class: OpenAIEmbeddingProvider
-      model: text-embedding-3-small
-      dim: 1536
+      model: text-embedding-3-large
+      dim: 3072                       # same as gemini-embedding-001 — no re-indexing needed
       requires: OPENAI_API_KEY
 
 # ─────────────────────────────────────────────

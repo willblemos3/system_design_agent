@@ -6,7 +6,7 @@ from src.shared.config import get_api_key
 from src.shared.exceptions import ProviderError
 
 
-_DEFAULT_MODEL = "text-embedding-3-small"
+_DEFAULT_MODEL = "text-embedding-3-large"  # 3072-dim — matches gemini-embedding-001
 
 
 class OpenAIEmbeddingProvider(EmbeddingProvider):
