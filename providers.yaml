@@ -35,7 +35,7 @@ embedding:
 # LLM
 # ─────────────────────────────────────────────
 llm:
-  primary: gemini
+  primary: openai
   fallback: null
 
   available:
@@ -46,7 +46,7 @@ llm:
       requires: GOOGLE_API_KEY
 
     openai:
-      status: planned
+      status: ready
       class: OpenAILLMProvider
       model: gpt-4o-mini
       requires: OPENAI_API_KEY

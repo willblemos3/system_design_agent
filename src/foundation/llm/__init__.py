@@ -5,3 +5,9 @@ __all__ = [
     "LLMProvider",
     "GeminiLLMProvider",
 ]
+
+try:
+    from src.foundation.llm.openai_llm_provider import OpenAILLMProvider
+    __all__.append("OpenAILLMProvider")
+except ImportError:
+    pass
