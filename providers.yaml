@@ -55,8 +55,8 @@ llm:
 # Runtime (agent executor)
 # ─────────────────────────────────────────────
 runtime:
-  primary: adk
-  fallback: null        # set to "openai" to use OpenAIRuntime as fallback
+  primary: openai
+  fallback: null
 
   available:
     adk:
