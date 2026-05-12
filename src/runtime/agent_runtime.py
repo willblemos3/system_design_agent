@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Iterator
+from typing import AsyncIterator
 
 from src.tools.tool import Tool, ToolResult
 
@@ -7,13 +7,15 @@ from src.tools.tool import Tool, ToolResult
 class AgentRuntime(ABC):
 
     @abstractmethod
-    def run(self, input: str, tools: list[Tool]) -> str: ...
+    async def run(self, input: str, tools: list[Tool]) -> str: ...
 
     @abstractmethod
-    def stream(self, input: str, tools: list[Tool]) -> Iterator[str]: ...
+    async def stream(self, input: str, tools: list[Tool]) -> AsyncIterator[str]: ...
 
-    @abstractmethod
-    def invoke_tool(self, tool: Tool, kwargs: dict) -> ToolResult: ...
+    def invoke_tool(self, tool: Tool, kwargs: dict) -> ToolResult:
+        return tool.execute(**kwargs)
 
-    @abstractmethod
-    def handoff(self, target_agent: str, context: dict): ...
+    def handoff(self, target_agent: str, context: dict) -> None:
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support handoff."
+        )
