@@ -1,4 +1,6 @@
 import inspect
+import uuid
+from datetime import datetime, timezone
 from typing import AsyncIterator
 
 from google.adk.agents import LlmAgent
@@ -6,6 +8,7 @@ from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai.types import Content, Part
 
+from src.foundation.memory.memory_provider import MemoryProvider, MemoryRecord
 from src.runtime.agent_runtime import AgentRuntime
 from src.tools.tool import Tool, ToolSchema
 
@@ -64,9 +67,15 @@ class ADKRuntime(AgentRuntime):
         self,
         model: str = "gemini-2.5-flash",
         instruction: str = "",
+        memory_provider: MemoryProvider | None = None,
+        user_id: str = "default_user",
+        session_id: str | None = None,
     ) -> None:
         self._model = model
         self._instruction = instruction
+        self._memory = memory_provider
+        self._user_id = user_id
+        self._session_id = session_id or str(uuid.uuid4())
 
     def _build_runner(self, tools: list[Tool]) -> tuple[Runner, InMemorySessionService]:
         agent = LlmAgent(
@@ -82,6 +91,27 @@ class ADKRuntime(AgentRuntime):
             session_service=session_service,
         )
         return runner, session_service
+
+    def _save_turn(self, user_text: str, agent_text: str) -> None:
+        if not self._memory or not agent_text:
+            return
+        now = datetime.now(timezone.utc).isoformat()
+        self._memory.save(MemoryRecord(
+            id=str(uuid.uuid4()),
+            user_id=self._user_id,
+            session_id=self._session_id,
+            role="user",
+            text=user_text,
+            timestamp=now,
+        ))
+        self._memory.save(MemoryRecord(
+            id=str(uuid.uuid4()),
+            user_id=self._user_id,
+            session_id=self._session_id,
+            role="agent",
+            text=agent_text,
+            timestamp=now,
+        ))
 
     async def run(self, input: str, tools: list[Tool]) -> str:
         runner, session_service = self._build_runner(tools)
@@ -104,7 +134,9 @@ class ADKRuntime(AgentRuntime):
                     if part.text
                 )
 
-        return "".join(parts)
+        response = "".join(parts)
+        self._save_turn(input, response)
+        return response
 
     async def stream(self, input: str, tools: list[Tool]) -> AsyncIterator[str]:
         runner, session_service = self._build_runner(tools)
@@ -114,12 +146,17 @@ class ADKRuntime(AgentRuntime):
             user_id=_USER_ID,
         )
 
-        async for event in runner.run_async(
-            user_id=_USER_ID,
-            session_id=session.id,
-            new_message=Content(parts=[Part(text=input)]),
-        ):
-            if event.content:
-                for part in event.content.parts:
-                    if part.text:
-                        yield part.text
+        chunks: list[str] = []
+        try:
+            async for event in runner.run_async(
+                user_id=_USER_ID,
+                session_id=session.id,
+                new_message=Content(parts=[Part(text=input)]),
+            ):
+                if event.content:
+                    for part in event.content.parts:
+                        if part.text:
+                            chunks.append(part.text)
+                            yield part.text
+        finally:
+            self._save_turn(input, "".join(chunks))

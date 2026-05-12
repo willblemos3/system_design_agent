@@ -24,35 +24,33 @@ The goal is to build a **platform** where models, embeddings, vector stores, too
 │                                                                      │
 │        ADKRuntime          LangChainRuntime         MCPAdapter       │
 │                                                                      │
-│              run() │ stream() │ invoke_tool() │ handoff()            │
+│   run() │ stream() │ invoke_tool() │ handoff()                       │
 │                                                                      │
+│   Auto-saves each turn to MemoryProvider (user query + agent reply). │
 │   Each adapter reads tool.schema() and wraps it into the            │
-│   framework-specific registration format. execute() is called       │
-│   directly — no framework logic leaks into the tool.                │
-└─────────────────────────────────┬────────────────────────────────────┘
-                                  │
-┌─────────────────────────────────▼────────────────────────────────────┐
-│                           TOOL LAYER                                 │
-│                                                                      │
-│                      CandidateSearchTool                             │
-│                                                                      │
-│                   execute(**kwargs) → ToolResult                     │
-│                   schema()          → ToolSchema                     │
-│                                                                      │
-│  schema() is the portability contract.                               │
-│  It describes name, description, and parameters as JSON Schema.      │
-│  Runtime adapters translate this — business logic never changes.     │
-└─────────────────────────────────┬────────────────────────────────────┘
-                                  │
-┌─────────────────────────────────▼────────────────────────────────────┐
-│                        APPLICATION LAYER                             │
-│                                                                      │
-│                       CandidateRetriever                             │
-│                                                                      │
-│              query → embed → vector_store.search() → results        │
-└─────────────────────────────────┬────────────────────────────────────┘
-                                  │
-┌─────────────────────────────────▼────────────────────────────────────┐
+│   framework-specific registration format.                            │
+└──────────────────────┬──────────────────────────┬────────────────────┘
+                       │                          │
+          ┌────────────▼──────────┐   ┌───────────▼───────────────────┐
+          │      TOOL LAYER       │   │       MEMORY LAYER            │
+          │                       │   │                               │
+          │  CandidateSearchTool  │   │  VectorMemoryProvider         │
+          │  SearchMemoryTool     │   │                               │
+          │                       │   │  save(MemoryRecord)           │
+          │  execute() → Result   │   │  search(query, user_id, ...)  │
+          │  schema()  → Schema   │   │  get_session(session_id, ...) │
+          └────────────┬──────────┘   │                               │
+                       │              │  Backed by VectorStore        │
+          ┌────────────▼──────────┐   │  + EmbeddingProvider          │
+          │   APPLICATION LAYER   │   └───────────────────────────────┘
+          │                       │
+          │  CandidateRetriever   │
+          │  query → embed        │
+          │        → search       │
+          │        → results      │
+          └────────────┬──────────┘
+                       │
+┌──────────────────────▼───────────────────────────────────────────────┐
 │                        FOUNDATION LAYER                              │
 │                                                                      │
 │  ┌──────────────────┐  ┌───────────────────┐  ┌───────────────────┐ │
@@ -62,9 +60,9 @@ The goal is to build a **platform** where models, embeddings, vector stores, too
 │  │  embed_batch()   │  │  insert()         │  │  structured_      │ │
 │  │                  │  │  search()         │  │    generate()     │ │
 │  │  Providers:      │  │                   │  │  stream()         │ │
-│  │  · Gemini        │  │  Providers:       │  │                   │ │
+│  │  · Gemini   ✅   │  │  Providers:       │  │                   │ │
 │  │  · OpenAI        │  │  · FAISS     ✅   │  │  Providers:       │ │
-│  │  · Local         │  │  · Milvus    ✅   │  │  · Gemini         │ │
+│  │  · Local         │  │  · Milvus    ✅   │  │  · Gemini    ✅   │ │
 │  └──────────────────┘  │  · Vertex AI      │  │  · OpenAI         │ │
 │                        └───────────────────┘  │  · Claude         │ │
 │                                               └───────────────────┘ │
@@ -89,7 +87,7 @@ We only create contracts for components that already have multiple providers, ar
 | LLM | ✅ | Multiple providers planned |
 | Tools | ✅ | Must run across runtimes |
 | Runtime | ✅ | ADK and LangChain differ fundamentally |
-| Memory | ⏳ | Patterns still unknown — explore first |
+| Memory | ✅ | Implemented — per-message, user+session scope |
 | A2A / PubSub | ⏳ | Patterns still unknown — explore first |
 
 ---
@@ -257,21 +255,24 @@ The tool knows nothing about frameworks.
 → The tool is never touched.
 ```
 
-### First Tool
+### Tools
 
-**File:** `src/tools/candidate_search_tool.py`
+**Files:** `src/tools/`
+
+| Tool | Description |
+|---|---|
+| `CandidateSearchTool` | Semantic search over candidate index |
+| `SearchMemoryTool` | Retrieves relevant past turns from long-term memory |
 
 ```
 CandidateSearchTool
     ↓
 CandidateRetriever
     ↓
-EmbeddingProvider
-    ↓
-VectorStore
+EmbeddingProvider  +  VectorStore
 ```
 
-The same tool runs in notebooks, ADK, LangChain, and MCP without modification.
+The same tools run in notebooks, ADK, LangChain, and MCP without modification.
 
 ---
 
@@ -334,17 +335,67 @@ CandidateRetriever               CandidateRetriever
 
 ---
 
-# Memory
+# Memory Layer
 
-Intentionally delayed.
+**Files:** `src/foundation/memory/`
 
-Patterns are still unknown. Use concrete implementations first:
+Long-term memory is built on the same `VectorStore` + `EmbeddingProvider` contracts already in use — no new infrastructure.
 
-- `InMemoryStore`
-- `RedisStore`
-- simple vector memory
+### Contract
 
-Only after patterns are understood: create contracts.
+```python
+class MemoryProvider:
+    def save(self, record: MemoryRecord) -> None: ...
+    def search(self, query: str, user_id: str, top_k: int, session_id: str | None) -> list[MemoryRecord]: ...
+    def get_session(self, session_id: str, user_id: str) -> list[MemoryRecord]: ...
+```
+
+### MemoryRecord — the domain object
+
+```python
+@dataclass
+class MemoryRecord:
+    id: str
+    user_id: str
+    session_id: str
+    role: str        # "user" | "agent"
+    text: str
+    timestamp: str   # ISO 8601
+```
+
+`MemoryRecord` carries no embedding. The embedding is computed at save time by `EmbeddingProvider` and stored inside `VectorStore` as part of `VectorRecord`. The domain object never knows about infrastructure — the same separation used everywhere else in the platform.
+
+### How VectorMemoryProvider.save() works
+
+```
+MemoryRecord.text
+    ↓
+EmbeddingProvider.embed(text)  →  vector
+    ↓
+VectorStore.insert(VectorRecord(id, vector, metadata={all MemoryRecord fields}))
+```
+
+The vector lives in the index. The domain record stays clean.
+
+### Scope and filtering
+
+Memory is scoped by `user_id` + `session_id`. Search can filter by either or both.
+
+FAISS has no native metadata filtering — `VectorMemoryProvider` over-fetches (top_k × 20) and filters in Python. For production scale, replace `FAISSVectorStore` with a store that supports predicate pushdown (Milvus, pgvector). Only the wiring changes.
+
+### Auto-save
+
+`ADKRuntime` saves both turns automatically after each cycle:
+
+```
+user query  →  agent answer  →  save(user record) + save(agent record)
+```
+
+No `SaveMemoryTool`. No extra reasoning budget. The agent never knows saving is happening.
+
+### Providers
+
+- `VectorMemoryProvider` ✅ (FAISS or any VectorStore)
 
 ---
 
@@ -359,6 +410,7 @@ genai-platform/
 │   ├── experiments/
 │   ├── harness/
 │   └── workshops/
+│       └── platform_demo.ipynb           ← end-to-end demo (sections 0–9)
 │
 ├── src/
 │   ├── foundation/
@@ -368,7 +420,10 @@ genai-platform/
 │   │   │   ├── vector_store.py           ← VectorStore contract + data types
 │   │   │   ├── faiss_store.py
 │   │   │   ├── milvus_store.py
-│   │   │   └── schemas.py
+│   │   │   └── schemas.py                ← CANDIDATE_SCHEMA, MEMORY_SCHEMA
+│   │   ├── memory/
+│   │   │   ├── memory_provider.py        ← MemoryProvider contract + MemoryRecord
+│   │   │   └── vector_memory_provider.py ← VectorMemoryProvider (FAISS or any VectorStore)
 │   │   └── llm/
 │   │       └── llm_provider.py           ← LLMProvider contract + providers
 │   │
@@ -378,12 +433,12 @@ genai-platform/
 │   │
 │   ├── tools/
 │   │   ├── tool.py                       ← Tool base class, ToolSchema, ToolResult
-│   │   └── candidate_search_tool.py
+│   │   ├── candidate_search_tool.py
+│   │   └── search_memory_tool.py         ← semantic search over conversation history
 │   │
 │   ├── runtime/
 │   │   ├── agent_runtime.py              ← AgentRuntime contract
-│   │   ├── adk_runtime.py
-│   │   └── langchain_runtime.py
+│   │   └── adk_runtime.py                ← ADKRuntime (auto-saves turns to MemoryProvider)
 │   │
 │   ├── protocols/
 │   │   └── mcp/
@@ -391,6 +446,7 @@ genai-platform/
 │   │
 │   └── shared/
 │       ├── config.py                     ← provider config (API keys, endpoints)
+│       ├── dataset.py                    ← dataset loaders
 │       └── exceptions.py                 ← platform-level exceptions
 │
 └── tests/
@@ -403,34 +459,39 @@ genai-platform/
 
 # Execution Plan
 
-## Phase 1 — Foundation
-
-Build and certify each provider contract.
+## Phase 1 — Foundation ✅
 
 | Component | Status | Harness |
 |---|---|---|
-| EmbeddingProvider | 🔄 refactor from embedding.py | Gemini ↔ OpenAI |
-| VectorStore | ✅ done | Milvus ↔ FAISS ✅ |
-| LLMProvider | next | Gemini ↔ OpenAI |
-
-Success criteria: provider switching works with zero business logic changes.
+| EmbeddingProvider | ✅ | GeminiEmbeddingProvider |
+| VectorStore | ✅ | FAISS ↔ Milvus ✅ |
+| LLMProvider | ✅ | GeminiLLMProvider |
 
 ---
 
-## Phase 2 — Tools and Runtime
+## Phase 2 — Tools and Runtime ✅
 
 | Component | Status |
 |---|---|
-| Tool base class (execute + schema) | next |
-| CandidateSearchTool | next |
-| CandidateSearchAgent | next |
-| ADKRuntime | next |
-
-Success criteria: agent runs with tools in notebook and ADK. Same tool, no changes.
+| Tool base class (execute + schema) | ✅ |
+| CandidateSearchTool | ✅ |
+| SearchMemoryTool | ✅ |
+| ADKRuntime (run + stream + auto-save) | ✅ |
 
 ---
 
-## Phase 3 — MCP
+## Phase 3 — Memory ✅
+
+| Component | Status |
+|---|---|
+| MemoryProvider contract + MemoryRecord | ✅ |
+| VectorMemoryProvider (FAISS-backed) | ✅ |
+| Auto-save per turn in ADKRuntime | ✅ |
+| SearchMemoryTool for agent retrieval | ✅ |
+
+---
+
+## Phase 4 — MCP
 
 | Component | Status |
 |---|---|
@@ -439,12 +500,6 @@ Success criteria: agent runs with tools in notebook and ADK. Same tool, no chang
 | CandidateSearchTool exposed via MCP | planned |
 
 Success criteria: same tool runs in notebook, ADK, and MCP with zero business changes.
-
----
-
-## Phase 4 — Memory
-
-Explore concrete patterns first. Contract comes after.
 
 ---
 
