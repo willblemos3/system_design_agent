@@ -397,6 +397,21 @@ No `SaveMemoryTool`. No extra reasoning budget. The agent never knows saving is 
 
 - `VectorMemoryProvider` ✅ (FAISS or any VectorStore)
 
+### POC vs Production
+
+The contracts are production-grade. The providers are POC compromises.
+
+| What | Current (POC) | Production replacement |
+|---|---|---|
+| Vector storage | `FAISSVectorStore` — in-memory, lost on restart | pgvector / Qdrant / Weaviate — persistent + native filtering |
+| Metadata filtering | Over-fetch ×20, filter in Python | Predicate pushdown (`WHERE user_id = ?`) in the DB layer |
+| Session management | `_runtimes` dict in process memory | Redis / database — survives restarts, scales horizontally |
+| Tool user scope | `search_memory_tool._user_id` mutated at runtime | `user_id` injected per-request, tool instantiated per-request |
+| Authorization | None — any caller can pass any `user_id` | Auth layer validates `user_id` matches the authenticated token |
+| ADK sessions | `InMemorySessionService` — lost on restart | Persistent session service |
+
+None of these replacements touch `MemoryProvider`, `MemoryRecord`, `VectorMemoryProvider`, `SearchMemoryTool`, or `ADKRuntime`. Only the wiring changes — which is exactly what the platform was designed for.
+
 ---
 
 # Repository Structure
