@@ -9,7 +9,7 @@ from pymilvus import (
     CollectionSchema,
 )
 
-from vector_store import (
+from src.foundation.vector_store.vector_store import (
     VectorStore,
     VectorRecord,
     SearchResult,

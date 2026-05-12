@@ -5,7 +5,7 @@
 import faiss
 import numpy as np
 
-from vector_store import (
+from src.foundation.vector_store.vector_store import (
     VectorStore,
     SearchResult,
 )
