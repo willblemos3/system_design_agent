@@ -13,6 +13,10 @@ from src.shared.config import get_api_key
 from src.shared.exceptions import ProviderError
 
 
+def _print_tool_call(name: str, args: dict) -> None:
+    print(f"\n[tool call → {name}({args})]", flush=True)
+
+
 def _build_openai_tool(tool: Tool) -> dict:
     schema: ToolSchema = tool.schema()
     return {
@@ -41,12 +45,14 @@ class OpenAIRuntime(AgentRuntime):
         memory_provider: MemoryProvider | None = None,
         user_id: str = "default_user",
         session_id: str | None = None,
+        verbose: bool = True,
     ) -> None:
         self._model = model
         self._instruction = instruction
         self._memory = memory_provider
         self._user_id = user_id
         self._session_id = session_id or str(uuid.uuid4())
+        self._verbose = verbose
         self._client = AsyncOpenAI(api_key=get_api_key("openai"))
 
     def _base_messages(self, input: str) -> list[dict]:
@@ -101,7 +107,10 @@ class OpenAIRuntime(AgentRuntime):
                 for tc in msg.tool_calls:
                     tool = tool_map.get(tc.function.name)
                     if tool:
-                        tool_result = tool.execute(**json.loads(tc.function.arguments))
+                        kwargs_tool = json.loads(tc.function.arguments)
+                        if self._verbose:
+                            _print_tool_call(tc.function.name, kwargs_tool)
+                        tool_result = tool.execute(**kwargs_tool)
                         content = tool_result.content if not tool_result.error else {"error": tool_result.error}
                         messages.append({
                             "role": "tool",
@@ -169,7 +178,10 @@ class OpenAIRuntime(AgentRuntime):
                 for tc in tool_calls_buffer.values():
                     tool = tool_map.get(tc["name"])
                     if tool:
-                        tool_result = tool.execute(**json.loads(tc["arguments"]))
+                        kwargs_tool = json.loads(tc["arguments"])
+                        if self._verbose:
+                            _print_tool_call(tc["name"], kwargs_tool)
+                        tool_result = tool.execute(**kwargs_tool)
                         content = tool_result.content if not tool_result.error else {"error": tool_result.error}
                         messages.append({
                             "role": "tool",

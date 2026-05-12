@@ -61,21 +61,27 @@ def _build_tool_fn(tool: Tool) -> callable:
     return wrapper
 
 
+def _print_tool_call(name: str, args: dict) -> None:
+    print(f"\n[tool call → {name}({args})]", flush=True)
+
+
 class ADKRuntime(AgentRuntime):
 
     def __init__(
         self,
-        model: str = "gemini-2.5-flash",
+        model: str = "gemini-2.0-flash",
         instruction: str = "",
         memory_provider: MemoryProvider | None = None,
         user_id: str = "default_user",
         session_id: str | None = None,
+        verbose: bool = True,
     ) -> None:
         self._model = model
         self._instruction = instruction
         self._memory = memory_provider
         self._user_id = user_id
         self._session_id = session_id or str(uuid.uuid4())
+        self._verbose = verbose
 
     def _build_runner(self, tools: list[Tool]) -> tuple[Runner, InMemorySessionService]:
         agent = LlmAgent(
@@ -127,6 +133,11 @@ class ADKRuntime(AgentRuntime):
             session_id=session.id,
             new_message=Content(parts=[Part(text=input)]),
         ):
+            if self._verbose and event.content:
+                for part in event.content.parts:
+                    if part.function_call:
+                        _print_tool_call(part.function_call.name, dict(part.function_call.args))
+
             if event.is_final_response() and event.content:
                 parts.extend(
                     part.text
@@ -155,7 +166,9 @@ class ADKRuntime(AgentRuntime):
             ):
                 if event.content:
                     for part in event.content.parts:
-                        if part.text:
+                        if self._verbose and part.function_call:
+                            _print_tool_call(part.function_call.name, dict(part.function_call.args))
+                        elif part.text:
                             chunks.append(part.text)
                             yield part.text
         finally:
