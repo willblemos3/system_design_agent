@@ -62,7 +62,7 @@ def _build_tool_fn(tool: Tool) -> callable:
 
 
 def _print_tool_call(name: str, args: dict) -> None:
-    print(f"\n[tool call → {name}({args})]", flush=True)
+    print(f"[tool call → {name}({args})]", flush=True)
 
 
 class ADKRuntime(AgentRuntime):

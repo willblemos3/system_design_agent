@@ -14,7 +14,7 @@ from src.shared.exceptions import ProviderError
 
 
 def _print_tool_call(name: str, args: dict) -> None:
-    print(f"\n[tool call → {name}({args})]", flush=True)
+    print(f"[tool call → {name}({args})]", flush=True)
 
 
 def _build_openai_tool(tool: Tool) -> dict:
