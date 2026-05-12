@@ -25,7 +25,7 @@ embedding:
       requires: GOOGLE_API_KEY
 
     openai:
-      status: planned
+      status: ready
       class: OpenAIEmbeddingProvider
       model: text-embedding-3-small
       dim: 1536
@@ -56,7 +56,7 @@ llm:
 # ─────────────────────────────────────────────
 runtime:
   primary: adk
-  fallback: null        # set to "openai" once OpenAIRuntime is implemented
+  fallback: null        # set to "openai" to use OpenAIRuntime as fallback
 
   available:
     adk:
@@ -66,7 +66,7 @@ runtime:
       requires: GOOGLE_API_KEY
 
     openai:
-      status: planned
+      status: ready
       class: OpenAIRuntime
       model: gpt-4o-mini
       requires: OPENAI_API_KEY
