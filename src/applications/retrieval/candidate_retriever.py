@@ -1,95 +1,49 @@
-# =========================
-# candidate_retriever.py
-# =========================
+from dataclasses import dataclass
 
-import numpy as np
+from src.foundation.embeddings.embedding_provider import EmbeddingProvider
+from src.foundation.vector_store.vector_store import VectorStore
 
-from embedding import embed
+
+@dataclass
+class CandidateResult:
+    candidate_id: str
+    first_name: str
+    last_name: str
+    content_preview: str
+    score: float
 
 
 class CandidateRetriever:
 
     def __init__(
         self,
-        vector_store,
+        vector_store: VectorStore,
+        embedding_provider: EmbeddingProvider,
         index_name: str = "candidates_index",
-    ):
+    ) -> None:
+        self._vector_store = vector_store
+        self._embedding_provider = embedding_provider
+        self._index_name = index_name
 
-        self.vector_store = vector_store
-        self.index_name = index_name
-
-
-    def search(
-        self,
-        query: str,
-        top_k: int = 10,
-    ):
-
+    def search(self, query: str, top_k: int = 10) -> list[CandidateResult]:
         if not query.strip():
-            raise ValueError(
-                "Query cannot be empty."
-            )
+            raise ValueError("Query cannot be empty.")
 
+        query_vector = self._embedding_provider.embed(query)
 
-        query_vector = embed(
-            query
+        results = self._vector_store.search(
+            index_name=self._index_name,
+            query_vector=query_vector,
+            top_k=top_k,
         )
 
-
-        if isinstance(
-            query_vector,
-            np.ndarray,
-        ):
-            query_vector = (
-                query_vector.tolist()
+        return [
+            CandidateResult(
+                candidate_id=result.id,
+                first_name=result.metadata.get("first_name", ""),
+                last_name=result.metadata.get("last_name", ""),
+                content_preview=result.metadata.get("content", "")[:200],
+                score=round(result.score, 4),
             )
-
-
-        results = (
-            self.vector_store.search(
-                index_name=self.index_name,
-
-                query_vector=query_vector,
-
-                top_k=top_k,
-            )
-        )
-
-
-        formatted_results = []
-
-        for result in results:
-
-            metadata = (
-                result.metadata
-            )
-
-            formatted_results.append(
-                {
-                    "candidate_id": result.id,
-
-                    "first_name": metadata.get(
-                        "first_name"
-                    ),
-
-                    "last_name": metadata.get(
-                        "last_name"
-                    ),
-
-                    "content": (
-                        metadata.get(
-                            "content",
-                            "",
-                        )[:200]
-                        + "..."
-                    ),
-
-                    "score": round(
-                        result.score,
-                        4,
-                    ),
-                }
-            )
-
-
-        return formatted_results
+            for result in results
+        ]
