@@ -48,6 +48,53 @@ CANDIDATE_SCHEMA = {
 }
 
 
+MEMORY_SCHEMA = {
+    "description": "User conversation memory",
+
+    "fields": [
+        {
+            "name": "id",
+            "type": "string",
+            "primary": True,
+            "max_length": 100,
+        },
+        {
+            "name": "user_id",
+            "type": "string",
+            "max_length": 200,
+        },
+        {
+            "name": "session_id",
+            "type": "string",
+            "max_length": 200,
+        },
+        {
+            "name": "role",
+            "type": "string",
+            "max_length": 20,
+        },
+        {
+            "name": "text",
+            "type": "string",
+            "max_length": 8000,
+        },
+        {
+            "name": "timestamp",
+            "type": "string",
+            "max_length": 50,
+        },
+        {
+            "name": "embedding",
+            "type": "vector",
+            "dim": 3072,
+        },
+    ],
+
+    "vector_field": "embedding",
+
+    "metric_type": "COSINE",
+}
+
 
 # =========================
 # JOB_SCHEMA

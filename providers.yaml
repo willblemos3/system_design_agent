@@ -1,0 +1,72 @@
+# providers.yaml — Platform provider configuration
+#
+# Edit this file to switch providers. No Python code changes needed.
+# Set "primary" to any key listed under "available".
+# Set "fallback" to a second provider used when primary raises a 429/error,
+# or set to null to disable fallback.
+#
+# "status" values:
+#   ready   — implemented, tested
+#   planned — contract exists, provider not yet implemented
+
+# ─────────────────────────────────────────────
+# Embedding
+# ─────────────────────────────────────────────
+embedding:
+  primary: gemini
+  fallback: null        # set to "openai" once OPENAI_API_KEY is configured
+
+  available:
+    gemini:
+      status: ready
+      class: GeminiEmbeddingProvider
+      model: gemini-embedding-001
+      dim: 3072
+      requires: GOOGLE_API_KEY
+
+    openai:
+      status: ready
+      class: OpenAIEmbeddingProvider
+      model: text-embedding-3-large
+      dim: 3072                       # same as gemini-embedding-001 — no re-indexing needed
+      requires: OPENAI_API_KEY
+
+# ─────────────────────────────────────────────
+# LLM
+# ─────────────────────────────────────────────
+llm:
+  primary: openai
+  fallback: null
+
+  available:
+    gemini:
+      status: ready
+      class: GeminiLLMProvider
+      model: gemini-2.0-flash
+      requires: GOOGLE_API_KEY
+
+    openai:
+      status: ready
+      class: OpenAILLMProvider
+      model: gpt-4o-mini
+      requires: OPENAI_API_KEY
+
+# ─────────────────────────────────────────────
+# Runtime (agent executor)
+# ─────────────────────────────────────────────
+runtime:
+  primary: openai
+  fallback: null
+
+  available:
+    adk:
+      status: ready
+      class: ADKRuntime
+      model: gemini-2.0-flash
+      requires: GOOGLE_API_KEY
+
+    openai:
+      status: ready
+      class: OpenAIRuntime
+      model: gpt-4o-mini
+      requires: OPENAI_API_KEY
