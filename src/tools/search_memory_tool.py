@@ -17,6 +17,7 @@ class SearchMemoryTool(Tool):
         query: str,
         top_k: int = 5,
         session_id: str | None = None,
+        sort_by_time: bool = False,
     ) -> ToolResult:
         try:
             records = self._memory.search(
@@ -24,6 +25,7 @@ class SearchMemoryTool(Tool):
                 user_id=self._user_id,
                 top_k=top_k,
                 session_id=session_id,
+                sort_by_time=sort_by_time,
             )
             content = [
                 {
@@ -62,6 +64,12 @@ class SearchMemoryTool(Tool):
                     name="session_id",
                     type="string",
                     description="Filter results to a specific session. Omit to search all sessions for this user.",
+                    required=False,
+                ),
+                ToolParameter(
+                    name="sort_by_time",
+                    type="boolean",
+                    description="If true, return results in chronological order (oldest first). Use when the user asks about their first/earliest message or wants conversation history in order. Defaults to false (semantic similarity order).",
                     required=False,
                 ),
             ],

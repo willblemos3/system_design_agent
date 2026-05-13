@@ -48,6 +48,7 @@ class VectorMemoryProvider(MemoryProvider):
         user_id: str,
         top_k: int = 10,
         session_id: str | None = None,
+        sort_by_time: bool = False,
     ) -> list[MemoryRecord]:
         vector = self._embedder.embed(query)
         raw = self._store.search(
@@ -63,9 +64,10 @@ class VectorMemoryProvider(MemoryProvider):
             if session_id and m.get("session_id") != session_id:
                 continue
             results.append(_to_record(m))
-            if len(results) >= top_k:
-                break
-        return results
+        if sort_by_time:
+            results.sort(key=lambda r: r.timestamp)
+            return results[:top_k]
+        return results[:top_k]
 
     def get_session(
         self,

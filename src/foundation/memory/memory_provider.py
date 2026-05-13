@@ -24,6 +24,7 @@ class MemoryProvider(ABC):
         user_id: str,
         top_k: int = 10,
         session_id: str | None = None,
+        sort_by_time: bool = False,
     ) -> list[MemoryRecord]: ...
 
     @abstractmethod
