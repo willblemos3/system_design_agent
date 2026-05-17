@@ -29,10 +29,11 @@ class OpenAILLMProvider(LLMProvider):
 
     def structured_generate(self, prompt: str, schema: type[T], **kwargs) -> T:
         try:
+            system_content = kwargs.get("system_prompt", "Respond with valid JSON only.")
             response = self._client.chat.completions.create(
                 model=self._model,
                 messages=[
-                    {"role": "system", "content": "Respond with valid JSON only."},
+                    {"role": "system", "content": system_content},
                     {"role": "user", "content": prompt},
                 ],
                 response_format={"type": "json_object"},

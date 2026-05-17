@@ -30,13 +30,16 @@ class GeminiLLMProvider(LLMProvider):
 
     def structured_generate(self, prompt: str, schema: type[T], **kwargs) -> T:
         try:
+            config_kwargs: dict = {
+                "response_mime_type": "application/json",
+                "response_schema": schema,
+            }
+            if system_prompt := kwargs.get("system_prompt"):
+                config_kwargs["system_instruction"] = system_prompt
             response = self._client.models.generate_content(
                 model=self._model,
                 contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=schema,
-                ),
+                config=types.GenerateContentConfig(**config_kwargs),
             )
             return schema.model_validate_json(response.text)
         except genai_errors.APIError as e:

@@ -1,7 +1,6 @@
 from src.foundation.memory.memory_provider import MemoryProvider
 from src.tools.tool import Tool, ToolParameter, ToolResult, ToolSchema
 
-
 class SearchMemoryTool(Tool):
 
     def __init__(

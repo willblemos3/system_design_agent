@@ -13,8 +13,8 @@
 # Embedding
 # ─────────────────────────────────────────────
 embedding:
-  primary: gemini
-  fallback: null        # set to "openai" once OPENAI_API_KEY is configured
+  primary: openai
+  fallback: null
 
   available:
     gemini:

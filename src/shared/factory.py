@@ -41,3 +41,8 @@ def build_embedding_provider():
         return OpenAIEmbeddingProvider(model=entry.model)
     from src.foundation.embeddings import GeminiEmbeddingProvider
     return GeminiEmbeddingProvider(model=entry.model)
+
+
+def build_resume_parser():
+    from src.applications.parsing.resume_parser import ResumeParser
+    return ResumeParser(llm_provider=build_llm_provider())
