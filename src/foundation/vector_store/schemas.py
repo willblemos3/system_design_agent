@@ -96,6 +96,39 @@ MEMORY_SCHEMA = {
 }
 
 
+
+EXPERIENCE_SCHEMA = {
+    "description": "Individual work experience index",
+
+    "fields": [
+        {
+            "name": "experience_id",
+            "type": "string",
+            "primary": True,
+            "max_length": 100,
+        },
+        {
+            "name": "candidate_id",
+            "type": "string",
+            "max_length": 100,
+        },
+        {
+            "name": "experience",
+            "type": "json",
+        },
+        {
+            "name": "embedded_content",
+            "type": "vector",
+            "dim": 3072,
+        },
+    ],
+
+    "vector_field": "embedded_content",
+
+    "metric_type": "COSINE",
+}
+
+
 # =========================
 # JOB_SCHEMA
 # =========================
