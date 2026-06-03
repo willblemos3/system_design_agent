@@ -585,3 +585,7 @@ Every abstraction must pass:
 > Only wiring changes. Never business logic.
 
 If business logic changes: the abstraction failed.
+
+
+<img width="1600" height="900" alt="image" src="https://github.com/user-attachments/assets/1fd5aaf7-70d1-4485-8c6f-70310003035f" /> 
+
