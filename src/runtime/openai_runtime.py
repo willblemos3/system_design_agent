@@ -46,6 +46,8 @@ class OpenAIRuntime(AgentRuntime):
         user_id: str = "default_user",
         session_id: str | None = None,
         verbose: bool = True,
+        base_url: str | None = None,
+        api_key: str | None = None,
     ) -> None:
         self._model = model
         self._instruction = instruction
@@ -53,14 +55,29 @@ class OpenAIRuntime(AgentRuntime):
         self._user_id = user_id
         self._session_id = session_id or str(uuid.uuid4())
         self._verbose = verbose
-        self._client = AsyncOpenAI(api_key=get_api_key("openai"))
+        # base_url points the adapter at any OpenAI-compatible endpoint (Ollama, Gemini, ...).
+        self._client = AsyncOpenAI(
+            api_key=api_key or get_api_key("openai"),
+            base_url=base_url,
+        )
+        # Completed user/assistant turns of the current session (tool calls are not kept).
+        self._history: list[dict] = []
 
     def _base_messages(self, input: str) -> list[dict]:
         messages = []
         if self._instruction:
             messages.append({"role": "system", "content": self._instruction})
+        messages.extend(self._history)
         messages.append({"role": "user", "content": input})
         return messages
+
+    def _remember(self, user_text: str, agent_text: str) -> None:
+        self._history.append({"role": "user", "content": user_text})
+        self._history.append({"role": "assistant", "content": agent_text})
+
+    def reset(self) -> None:
+        self._history = []
+        self._session_id = str(uuid.uuid4())
 
     def _save_turn(self, user_text: str, agent_text: str) -> None:
         if not self._memory or not agent_text:
@@ -100,6 +117,7 @@ class OpenAIRuntime(AgentRuntime):
 
                 if not msg.tool_calls:
                     result = msg.content or ""
+                    self._remember(input, result)
                     self._save_turn(input, result)
                     return result
 
@@ -160,6 +178,7 @@ class OpenAIRuntime(AgentRuntime):
                                     tool_calls_buffer[idx]["arguments"] += tc.function.arguments
 
                 if not tool_calls_buffer:
+                    self._remember(input, "".join(chunks_all))
                     break
 
                 messages.append({

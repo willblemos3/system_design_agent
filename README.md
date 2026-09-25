@@ -1,591 +1,255 @@
-# GenAI Platform — Spec-Driven Blueprint
+# System Design PM Agent
 
-## Goal
+A conversational agent for practising recommender-system design interviews.
 
-Build a **clean, modular, provider-agnostic GenAI platform** that is easy to understand, use, test, maintain, extend, and replace components — notebook-friendly and production-friendly.
+The agent plays the **Product Manager** of a fictional company. It presents a system design challenge, answers business questions and pushes back the way a stakeholder would. **It never helps with the technical design.** That part is up to you. When you are done, it records your solution and your answers to the trade-off questions, then saves a report.
 
-The goal is **not** to build isolated agent demos.
+The exercises come from a RecSys course. There is one folder per module, and they get harder as the modules progress:
 
-The goal is to build a **platform** where models, embeddings, vector stores, tools, runtimes, and protocols can evolve independently without breaking business logic.
-
----
-
-# Architecture
-
-```
-┌─────────────────────────── CONSUMER LAYER ───────────────────────────┐
-│     Notebook       OpenAI Agent      ADK Agent       MCP Client      │
-└──────────────────────────────┬───────────────────────────────────────┘
-                               │
-┌──────────────────────────────▼───────────────────────────────────────┐
-│                          RUNTIME LAYER                               │
-│              OpenAIRuntime               ADKRuntime                  │
-│         run() · stream() · auto-saves to MemoryProvider             │
-└──────────────────────────────┬───────────────────────────────────────┘
-                               │
-               ┌───────────────┴───────────────┐
-               │                               │
-┌──────────────▼──────────┐   ┌────────────────▼──────────────────────┐
-│       TOOL LAYER        │   │           APPLICATION LAYER           │
-│                         │   │                                       │
-│  CandidateSearchTool    │   │  CandidateRetriever                   │
-│  SearchMemoryTool       │   │  query → embed() → search() → list   │
-│                         │   │                                       │
-│  execute() · schema()   │   └───────────────────────────────────────┘
-└─────────────────────────┘
-               │
-┌──────────────▼───────────────────────────────────────────────────────┐
-│                        FOUNDATION LAYER                              │
-│              contracts (ABCs) — no concrete imports here             │
-│                                                                      │
-│  ┌───────────────┐ ┌───────────────┐ ┌───────────────┐ ┌──────────┐ │
-│  │  Embedding    │ │  VectorStore  │ │  LLMProvider  │ │  Memory  │ │
-│  │  Provider     │ │               │ │               │ │  Provider│ │
-│  │               │ │ create_index()│ │  generate()   │ │          │ │
-│  │  embed()      │ │  insert()     │ │  structured   │ │  save()  │ │
-│  │  embed_batch()│ │  search()     │ │  stream()     │ │  search()│ │
-│  │               │ │               │ │               │ │  session │ │
-│  └───────┬───────┘ └───────┬───────┘ └───────┬───────┘ └────┬─────┘ │
-└──────────┼─────────────────┼─────────────────┼──────────────┼───────┘
-           │                 │   implemented by │              │
-┌──────────▼─────────────────▼─────────────────▼──────────────▼───────┐
-│                         PROVIDER LAYER                               │
-│                                                                      │
-│  ┌───────────────┐ ┌───────────────┐ ┌───────────────┐ ┌──────────┐ │
-│  │  Embeddings   │ │  VectorStore  │ │     LLM       │ │  Memory  │ │
-│  │               │ │               │ │               │ │          │ │
-│  │  Gemini   ✅  │ │  FAISS    ✅  │ │  Gemini   ✅  │ │  Vector  │ │
-│  │  OpenAI   ✅  │ │  Milvus   ✅  │ │  OpenAI   ✅  │ │  Memory  │ │
-│  └───────────────┘ └───────────────┘ └───────────────┘ │   ✅     │ │
-│         ▲                ▲                              │  uses ↑  │ │
-│         └────────────────┴─────── VectorMemoryProvider ─┘          │ │
-└──────────────────────────────────────────────────────────────────────┘
-```
-
-**Portability rule:** swapping any provider touches only the wiring line.
-Swapping a runtime touches only the runtime adapter. Business logic never changes.
-
----
-
-# Engineering Principles
-
-**Abstract only what is actually varying.**
-
-We only create contracts for components that already have multiple providers, are expected to change, or create infrastructure coupling.
-
-| Layer | Abstracted | Reason |
+| Module | Exercise | Company |
 |---|---|---|
-| Embeddings | ✅ | Multiple providers in use |
-| Vector Store | ✅ | Multiple providers validated |
-| LLM | ✅ | Multiple providers in use |
-| Tools | ✅ | Must run across runtimes |
-| Runtime | ✅ | OpenAI and ADK differ fundamentally |
-| Memory | ✅ | Implemented — per-message, user+session scope |
-| A2A / PubSub | ⏳ | Patterns still unknown — explore first |
+| 1 — Introduction and Evaluation Metrics | `01_norva` | NORVA, an online clothing retailer |
+| 2 — Basic Models | `02_zumi` | ZUMI, a food delivery app |
+| 3 — Negative Sampling | `03_meridiano` | MERIDIANO, a news aggregator |
+| 4 — End to End RecSys | `04_orbe` | ORBE, a short-video platform |
+
+```
+Alex: Hi, I'm Alex, your system design agent and NORVA's representative for this challenge.
+NORVA is an online clothing retailer: around 40,000 items and 180,000 orders a month.
+Right now our homepage carousel is hand-picked every Monday by two merchandisers...
+Would you like more details on the data we have and what we need from you?
+
+────────────────────────────────────────────────────────────
+What would you like to do?
+  1. Ask a question        talk to Alex about the business
+  2. See the details       data available and deliverables
+  3. Submit your solution  record your proposed architecture
+  4. Trade-off questions   answer questions about your design
+  5. Finish                save the report and end
+Type a number, or just type your question.
+────────────────────────────────────────────────────────────
+```
 
 ---
 
-# Development Model
+## Quick start
 
-Every component follows:
-
+```powershell
+pip install -r requirements.txt
+ollama pull gemma3:12b                                  # free local model (see Setup)
+python scripts/pm_chat.py --module 1                    # random exercise from module 1
 ```
-Specification → Contract → Harness → Implementation → Provider Certification
-```
-
-**Harnesses are not unit tests.** Harnesses validate architectural integrity.
-
-The criterion is:
-
-> Swap a provider. If business logic changes, the abstraction failed.
 
 ---
 
-# Provider Configuration
+## Setup
 
-**Files:** `providers.yaml` (root), `src/shared/provider_config.py`, `src/shared/factory.py`
+The commands below are for **Windows / PowerShell**. macOS/Linux differences are noted inline.
 
-Provider selection is centralised in `providers.yaml`. No Python code changes are needed to switch providers.
+### 1. Requirements
+
+- Python 3.11+
+- One LLM provider. You only need **one**:
+  - **Ollama**: free and local. The default model needs a GPU with about 10 GB of VRAM.
+  - **Gemini**: free tier in the cloud. You only need an API key.
+  - **OpenAI**: paid.
+
+### 2. Install
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1          # macOS/Linux: source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+> If PowerShell blocks `Activate.ps1`, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once. You can also skip activation and call `.venv\Scripts\python` directly.
+
+### 3. Choose a provider
+
+The provider is selected in [`providers.yaml`](providers.yaml). To switch, change `primary:` in the `runtime` block. No code changes are needed.
 
 ```yaml
-embedding:
-  primary: gemini      # switch to "openai" to use text-embedding-3-large
-  fallback: null
-
-llm:
-  primary: openai      # switch to "gemini" to use gemini-2.0-flash
-  fallback: null
-
 runtime:
-  primary: openai      # switch to "adk" to use ADKRuntime
-  fallback: null
+  primary: ollama     # ollama | gemini | openai | adk
 ```
 
-Factory functions read this file and return the correct implementation:
+**Option A: Ollama (free, local, the default)**
 
-```python
-from src.shared.factory import build_runtime, build_llm_provider, build_embedding_provider
-
-runtime          = build_runtime(instruction="...", memory_provider=mp, user_id="u1")
-llm_provider     = build_llm_provider()
-embedding_provider = build_embedding_provider()
+```powershell
+winget install Ollama.Ollama        # macOS: brew install ollama | Linux: curl -fsSL https://ollama.com/install.sh | sh
+ollama pull gemma3:12b              # ~8 GB, one-time download
+ollama list                         # gemma3:12b should be listed
 ```
 
-Both embedding providers use **3072-dim vectors** (Gemini `gemini-embedding-001` and OpenAI `text-embedding-3-large`), so switching embedding provider requires no re-indexing.
+> After installing, **close and reopen the terminal**. In VS Code, reopen **VS Code itself**. A terminal opened before the install cannot see `ollama`. On Windows the Ollama server starts on its own (look for the tray icon). If it isn't running, use `ollama serve`. With less VRAM, use `gemma3:4b` and change `model:` under `ollama` in `providers.yaml`.
+
+**Option B: Gemini (free tier)**
+
+1. Create an API key at https://aistudio.google.com.
+2. Create a `.env` file at the repository root. It is already git-ignored.
+   ```
+   GOOGLE_API_KEY=your-key-here
+   ```
+3. Set `primary: gemini` in `providers.yaml`.
+
+**Option C: OpenAI (paid)**
+
+Add `OPENAI_API_KEY=...` to `.env` and set `primary: openai`.
 
 ---
 
-# Foundation Layer
+## Usage
 
-## 1. Embedding Provider
+Run the script **in a terminal**: VS Code's integrated terminal, PowerShell or Windows Terminal. The "Run" button of extensions such as Code Runner sends output to the read-only *Output* panel, and from there you can't type.
 
-**File:** `src/foundation/embeddings/embedding_provider.py`
-
-### Contract
-
-```python
-class EmbeddingProvider:
-    def embed(self, text: str) -> list[float]: ...
-    def embed_batch(self, texts: list[str]) -> list[list[float]]: ...
+```powershell
+python scripts/pm_chat.py --list                        # list modules and exercises
+python scripts/pm_chat.py --module 1                    # random exercise from the module
+python scripts/pm_chat.py --module 2 --exercise zumi    # a specific exercise
 ```
 
-### Providers
-
-- `GeminiEmbeddingProvider` ✅ — `gemini-embedding-001` (3072-dim)
-- `OpenAIEmbeddingProvider` ✅ — `text-embedding-3-large` (3072-dim)
-
----
-
-## 2. Vector Store
-
-**Files:** `src/foundation/vector_store/`
-
-### Contract
-
-```python
-class VectorStore:
-    def create_index(self, index_name: str, schema: dict): ...
-    def insert(self, index_name: str, records: list[VectorRecord]): ...
-    def search(self, index_name: str, query_vector: list[float], top_k: int) -> list[SearchResult]: ...
-```
-
-### Harness Passed
-
-```
-Milvus → FAISS   ✅  Business logic unchanged.
-```
-
-### Providers
-
-- `FAISSVectorStore` ✅
-- `MilvusVectorStore` ✅
-- `VertexVectorStore` (planned)
-
----
-
-## 3. LLM Provider
-
-**File:** `src/foundation/llm/llm_provider.py`
-
-### Contract
-
-```python
-class LLMProvider:
-    def generate(self, prompt: str, **kwargs) -> str: ...
-    def structured_generate(self, prompt: str, schema: type[BaseModel], **kwargs) -> BaseModel: ...
-    def stream(self, prompt: str, **kwargs) -> Iterator[str]: ...
-```
-
-### Providers
-
-- `GeminiLLMProvider` ✅ — `gemini-2.0-flash`
-- `OpenAILLMProvider` ✅ — `gpt-4o-mini`
-- `ClaudeProvider` (planned)
-
----
-
-# Application Layer
-
-## Candidate Retriever
-
-**File:** `src/applications/retrieval/candidate_retriever.py`
-
-```
-query → EmbeddingProvider.embed() → VectorStore.search() → list[SearchResult]
-```
-
-No framework coupling. No tool coupling. Pure business logic.
-
----
-
-# Tool Layer
-
-Tools are the **portability boundary** between business logic and runtimes.
-
-Every tool exposes two contracts:
-
-```python
-class Tool:
-    def execute(self, **kwargs) -> ToolResult: ...
-    def schema(self) -> ToolSchema: ...
-```
-
-`execute()` runs the capability.
-`schema()` describes it — name, description, parameters as JSON Schema.
-
-Runtime adapters call `schema()` to register the tool in their framework-specific format. They call `execute()` to invoke it. No framework logic ever enters the tool.
-
-### ToolSchema contract
-
-```python
-@dataclass
-class ToolParameter:
-    name: str
-    type: str          # "string" | "integer" | "number" | "boolean" | "array" | "object"
-    description: str
-    required: bool = True
-
-@dataclass
-class ToolSchema:
-    name: str
-    description: str
-    parameters: list[ToolParameter]
-
-@dataclass
-class ToolResult:
-    content: Any
-    error: str | None = None
-```
-
-### Why schema() closes the portability gap
-
-Without `schema()`:
-
-```
-ADKRuntime        — reads tool description from ADK-specific declaration
-OpenAIRuntime     — reads tool description from OpenAI function definition
-MCPAdapter        — reads tool description from MCP JSON Schema
-
-→ Each adapter makes assumptions about how to read the tool.
-→ Adding a new runtime requires touching the tool.
-```
-
-With `schema()`:
-
-```
-Every runtime calls tool.schema()
-Every runtime translates ToolSchema → its own format
-The tool knows nothing about frameworks.
-
-→ Adding a new runtime requires only a new adapter.
-→ The tool is never touched.
-```
-
-### Tools
-
-**Files:** `src/tools/`
-
-| Tool | Description |
+| Option | Accepts |
 |---|---|
-| `CandidateSearchTool` | Semantic search over candidate index |
-| `SearchMemoryTool` | Retrieves relevant past turns from long-term memory |
+| `--module` / `-m` | `2`, `module_2` |
+| `--exercise` / `-e` | `zumi`, `02_zumi`, `2`. Omit it to get a random exercise. |
+| `--language` | Language of the opening message. Default: `English`. After the opening, the PM replies in whatever language you write in. |
+| `--pm-name` | The PM's name. Default: `Alex`. |
 
-```
-CandidateSearchTool
-    ↓
-CandidateRetriever
-    ↓
-EmbeddingProvider  +  VectorStore
-```
+### The session
 
-The same tools run in notebooks, ADK, OpenAI, and MCP without modification.
+| Input | What happens |
+|---|---|
+| free text | Goes to the PM as a question. The PM answers as a stakeholder: business goals, stakeholders, priorities and constraints. It never gives technical advice. |
+| `2` | Shows the data available and the deliverables, exactly as written in the exercise. |
+| `3` | Submits your solution: type it, paste it or load it from a file. The app then asks for confirmation. |
+| `4` | Asks the "trade-offs to defend" questions one at a time. Answers are only recorded, with no debate. An empty answer skips the question. |
+| `5` | Offers to fill in anything missing, then saves the report and ends. |
+| `m` | Shows the menu again. |
+| `exit` / `Ctrl+C` | Quits. If you have recorded anything, the report is still saved. |
+
+**Writing text.** Lines you are writing start with `>`. You can type several lines or paste text that has paragraphs. **Press Enter on an empty line to send.**
+
+**Solution from a file.** Put the file in [`results/`](results/). At step `3`, type only the file name with its extension, for example `solution.docx`.
+- Accepted formats are `.md`, `.txt`, `.docx` and `.doc`. Old `.doc` files need LibreOffice installed; without it, save them as `.docx`.
+- When the file loads, the PM confirms it (*"Loaded solution.docx from results/ (523 words)"*), shows a preview and asks you to confirm.
+- When it fails, the PM shows the error and asks again. The possible errors are: file not found (with a list of what is in `results/`), unsupported format, empty file, or read failure.
+
+**Diagrams.** Put diagrams in [`results/diagrams/`](results/diagrams/). Everything in that folder when you finish goes into the report. Images appear inline and other files become links. When the deliverable asks for a diagram (ORBE does) and the folder is empty, the app warns you before saving. **Clear the folder between exercises**, because every session uses the same folder.
+
+**Report.** Saved to `reports/<date>_module<n>_<exercise>.md`. It contains:
+1. **Problem:** context, data and deliverables.
+2. **Proposed solution:** what you confirmed, and the source file if it came from `results/`.
+3. **Trade-offs:** each question with your answer.
+4. **Diagrams:** included only when `results/diagrams/` has files.
+
+The contents of `results/` and `reports/` are git-ignored. Only the folder structure is versioned.
+
+### From code
+
+```python
+from src.shared.factory import build_pm_session
+from src.applications.system_design import run_console
+
+session = build_pm_session(module=2)                    # random exercise
+session = build_pm_session(module=2, exercise="zumi")   # specific exercise
+await run_console(session)                              # the same session as the terminal
+
+# or step by step
+async for chunk in session.stream():                    # no message: the PM opens the meeting
+    print(chunk, end="")
+reply = await session.ask("Who asked for this, and why now?")
+session.submit_solution("My architecture: ...")
+session.answer_tradeoff(0, "Because ...")               # index into session.exercise.tradeoffs
+path = session.report().save()
+```
 
 ---
 
-# Runtime Layer
-
-Introduced after the Tool layer is validated.
-
-### Contract
-
-```python
-class AgentRuntime:
-    def run(self, input: str, tools: list[Tool]) -> str: ...
-    def stream(self, input: str, tools: list[Tool]) -> AsyncIterator[str]: ...
-    def invoke_tool(self, tool: Tool, kwargs: dict) -> ToolResult: ...
-```
-
-### Adapter responsibility
-
-Each adapter:
-1. Calls `tool.schema()` to build the framework-specific tool declaration
-2. Calls `tool.execute(**kwargs)` when the framework triggers a tool call
-3. Translates framework output back to standard types
-
-### Providers
-
-- `OpenAIRuntime` ✅ — streaming agentic loop with tool call reassembly
-- `ADKRuntime` ✅ — Google ADK with event-stream tool detection
-
----
-
-# Protocol Layer
-
-Introduced after tools and agents are validated end-to-end.
-
-## MCP
-
-MCP is a **capability exposure layer**, not a business logic layer.
+## How the agent works
 
 ```
-WITHOUT MCP                          WITH MCP
-
-Notebook / Agent                     Notebook / Agent / External Runtime
-       ↓                                            ↓
-CandidateSearchTool              MCP Server → CandidateSearchTool
-       ↓                                            ↓
-CandidateRetriever               CandidateRetriever
-```
-
-`MCPAdapter` calls `tool.schema()` to build the MCP tool JSON Schema. Same pattern as every other runtime adapter.
-
-### Rules
-
-- Do not import MCP into retrievers or tools
-- Do not expose vector stores directly via MCP
-- Do not let MCP payloads leak into business logic
-
----
-
-# Memory Layer
-
-**Files:** `src/foundation/memory/`
-
-Long-term memory is built on the same `VectorStore` + `EmbeddingProvider` contracts already in use — no new infrastructure.
-
-### Contract
-
-```python
-class MemoryProvider:
-    def save(self, record: MemoryRecord) -> None: ...
-    def search(self, query: str, user_id: str, top_k: int,
-               session_id: str | None, sort_by_time: bool = False) -> list[MemoryRecord]: ...
-    def get_session(self, session_id: str, user_id: str) -> list[MemoryRecord]: ...
-```
-
-### MemoryRecord — the domain object
-
-```python
-@dataclass
-class MemoryRecord:
-    id: str
-    user_id: str
-    session_id: str
-    role: str        # "user" | "agent"
-    text: str
-    timestamp: str   # ISO 8601
-```
-
-`MemoryRecord` carries no embedding. The embedding is computed at save time by `EmbeddingProvider` and stored inside `VectorStore` as part of `VectorRecord`. The domain object never knows about infrastructure — the same separation used everywhere else in the platform.
-
-### How VectorMemoryProvider.save() works
-
-```
-MemoryRecord.text
+ExerciseRepository.get(module, exercise=None)   ← docs/system_design/module_<n>/<nn>_<name>.md
     ↓
-EmbeddingProvider.embed(text)  →  vector
+build_pm_instruction(exercise)                  ← CO-STAR prompt: prompts/pm_system_prompt.md
     ↓
-VectorStore.insert(VectorRecord(id, vector, metadata={all MemoryRecord fields}))
+build_runtime(instruction=...)                  ← runtime from providers.yaml
+    ↓
+PMSession                                       ← conversation + recorded solution + trade-off answers
+    ↓
+run_console(session)                            ← menu: ask · details · submit · trade-offs · finish
+    ↓
+SessionReport.save()                            ← reports/<date>_module<n>_<exercise>.md
 ```
 
-The vector lives in the index. The domain record stays clean.
-
-### Scope and filtering
-
-Memory is scoped by `user_id` + `session_id`. Search can filter by either or both.
-
-FAISS has no native metadata filtering — `VectorMemoryProvider` over-fetches (top_k × 20) and filters in Python. For production scale, replace `FAISSVectorStore` with a store that supports predicate pushdown (Milvus, pgvector). Only the wiring changes.
-
-`sort_by_time=True` returns results in chronological order (ascending timestamp) instead of semantic similarity order. Useful when the agent needs to reconstruct conversation history rather than find the most relevant records.
-
-### Auto-save
-
-Both `OpenAIRuntime` and `ADKRuntime` save both turns automatically after each cycle:
-
-```
-user query  →  agent answer  →  save(user record) + save(agent record)
-```
-
-No `SaveMemoryTool`. No extra reasoning budget. The agent never knows saving is happening.
-
-### User isolation
-
-Each user gets their own `AgentRuntime` and `SearchMemoryTool` instance via `get_user_context(user_id)`. The `memory_provider` is shared — all records go into the same FAISS index — but every search is filtered by `user_id`, so users never see each other's history.
-
-```python
-def get_user_context(user_id: str) -> dict:
-    if user_id not in _user_contexts:
-        _user_contexts[user_id] = {
-            "runtime": build_runtime(memory_provider=memory_provider, user_id=user_id),
-            "memory_tool": SearchMemoryTool(memory_provider=memory_provider, user_id=user_id),
-        }
-    return _user_contexts[user_id]
-```
-
-To switch users mid-session, change `active_user_id` and call `get_user_context()` again — each user's history is preserved in the shared index.
-
-### Providers
-
-- `VectorMemoryProvider` ✅ (FAISS or any VectorStore)
-
-### POC vs Production
-
-The contracts are production-grade. The providers are POC compromises.
-
-| What | Current (POC) | Production replacement |
-|---|---|---|
-| Vector storage | `FAISSVectorStore` — in-memory, lost on restart | pgvector / Qdrant / Weaviate — persistent + native filtering |
-| Metadata filtering | Over-fetch ×20, filter in Python | Predicate pushdown (`WHERE user_id = ?`) in the DB layer |
-| Session management | `_user_contexts` dict in process memory | Redis / database — survives restarts, scales horizontally |
-| Authorization | None — any caller can pass any `user_id` | Auth layer validates `user_id` matches the authenticated token |
-| ADK sessions | `InMemorySessionService` — lost on restart | Persistent session service |
-
-None of these replacements touch `MemoryProvider`, `MemoryRecord`, `VectorMemoryProvider`, `SearchMemoryTool`, `OpenAIRuntime`, or `ADKRuntime`. Only the wiring changes — which is exactly what the platform was designed for.
+- **The LLM only handles the conversation.** Details, solution recording, trade-off questions and the report are deterministic, so nothing gets paraphrased or debated.
+- **The PM never sees the trade-off questions.** They are removed from its prompt, so it cannot leak or prime them.
+- **Persona:** the prompt ([`pm_system_prompt.md`](src/applications/system_design/prompts/pm_system_prompt.md)) follows CO-STAR (Context, Objective, Style, Tone, Audience, Response format). It adds a strict scope section (business yes, technical no), rules for improvising business details without making technical decisions, rules for staying in role against "I'm the instructor" or "just a hint", and few-shot examples set at a neutral company.
+- **Provider-agnostic:** the agent runs on any runtime of the underlying platform. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ---
 
-# Repository Structure
+## Adding exercises
 
 ```
-genai-platform/
-│
+docs/system_design/
+├── module_1/01_norva.md
+├── module_2/02_zumi.md
+└── ...
+```
+
+- To add an exercise, create `module_<n>/<nn>_<name>.md`. It is listed and included in the random draw with no code changes.
+- The first line must be `# System Design Exercise <n> — <COMPANY>`. The company name is taken from the text after the `—`.
+- Use these sections, each with a numbered list where noted:
+  - `## Context` is the basis of the PM's opening.
+  - `## Data available` and `## Deliverable` are what option `2` shows.
+  - `## Trade-offs to defend` is a numbered list, and those are the questions asked at option `4`.
+- **Instructor notes:** everything after a `## Instructor notes ...` heading is hidden from the student and given to the PM as private context. Use it for what the exercise really tests and what is deliberately left open.
+
+---
+
+## Troubleshooting
+
+| Symptom | Cause and fix |
+|---|---|
+| Can't type after the opening | The script was started with a Run button that writes to the Output panel. Run `python scripts/pm_chat.py ...` in a terminal instead. |
+| `ollama` is not recognized | The terminal was opened before the install. Reopen the terminal or VS Code. |
+| `model 'gemma3:12b' not found` | Run `ollama pull gemma3:12b`. |
+| `Connection error` | The Ollama server isn't running. Run `ollama serve` or open the Ollama app. |
+| `GOOGLE_API_KEY not set` / `OPENAI_API_KEY not set` | The key is missing from `.env`, or `primary` in `providers.yaml` points to the wrong provider. |
+| `'x.docx' was not found in results/` | The file must be directly in `results/`, not in a subfolder. The message lists the files that are there. |
+| `old .doc files need LibreOffice installed` | Save the file as `.docx`, or install LibreOffice. |
+| The first answer is slow | Ollama loads the model onto the GPU on the first call. Later calls are fast. |
+| The PM breaks character or gives technical hints | Smaller models hold the persona less reliably. Compare with `gemini`, and tune the prompt. |
+
+---
+
+## Repository structure
+
+```
 ├── README.md
-├── providers.yaml                            ← provider selection (no code changes to swap)
-│
-├── notebooks/
-│   ├── experiments/
-│   ├── harness/
-│   └── workshops/
-│       └── platform_demo.ipynb               ← end-to-end demo (sections 0–9)
-│
-├── src/
-│   ├── foundation/
-│   │   ├── embeddings/
-│   │   │   ├── embedding_provider.py         ← EmbeddingProvider contract
-│   │   │   ├── gemini_embedding_provider.py
-│   │   │   └── openai_embedding_provider.py
-│   │   ├── vector_store/
-│   │   │   ├── vector_store.py               ← VectorStore contract + data types
-│   │   │   ├── faiss_store.py
-│   │   │   ├── milvus_store.py
-│   │   │   └── schemas.py                    ← CANDIDATE_SCHEMA, MEMORY_SCHEMA
-│   │   ├── memory/
-│   │   │   ├── memory_provider.py            ← MemoryProvider contract + MemoryRecord
-│   │   │   └── vector_memory_provider.py     ← VectorMemoryProvider (FAISS or any VectorStore)
-│   │   └── llm/
-│   │       ├── llm_provider.py               ← LLMProvider contract
-│   │       ├── gemini_llm_provider.py
-│   │       └── openai_llm_provider.py
-│   │
-│   ├── applications/
-│   │   └── retrieval/
-│   │       └── candidate_retriever.py
-│   │
-│   ├── tools/
-│   │   ├── tool.py                           ← Tool base class, ToolSchema, ToolResult
-│   │   ├── candidate_search_tool.py
-│   │   └── search_memory_tool.py             ← semantic search over conversation history
-│   │
-│   ├── runtime/
-│   │   ├── agent_runtime.py                  ← AgentRuntime contract
-│   │   ├── openai_runtime.py                 ← OpenAIRuntime (streaming + tool call reassembly)
-│   │   └── adk_runtime.py                    ← ADKRuntime (Google ADK event stream)
-│   │
-│   ├── protocols/
-│   │   └── mcp/                              ← MCPAdapter (planned)
-│   │
-│   └── shared/
-│       ├── config.py                         ← API key resolution
-│       ├── dataset.py                        ← dataset loaders
-│       ├── exceptions.py                     ← platform-level exceptions
-│       ├── factory.py                        ← build_runtime / build_llm_provider / build_embedding_provider
-│       └── provider_config.py               ← loads and parses providers.yaml
-│
-└── tests/
-    ├── unit/
-    ├── integration/
-    └── harness/                              ← provider switching tests
+├── providers.yaml                         ← provider selection (no code changes to swap)
+├── requirements.txt
+├── scripts/
+│   └── pm_chat.py                         ← terminal entry point
+├── docs/
+│   ├── ARCHITECTURE.md                    ← the underlying platform
+│   └── system_design/module_<n>/          ← exercises
+├── results/                               ← student files: solutions + diagrams/
+├── reports/                               ← generated session reports
+└── src/
+    ├── applications/
+    │   ├── system_design/                 ← the PM agent
+    │   │   ├── exercise.py                ← Exercise + ExerciseRepository
+    │   │   ├── prompt_builder.py          ← renders the PM system prompt
+    │   │   ├── prompts/pm_system_prompt.md
+    │   │   ├── pm_session.py              ← PMSession (runtime-agnostic)
+    │   │   ├── console.py                 ← run_console: menu-driven session
+    │   │   ├── documents.py               ← loads files from results/, lists diagrams
+    │   │   └── report.py                  ← SessionReport → markdown
+    │   └── retrieval/                     ← candidate retriever (platform example)
+    ├── foundation/                        ← embeddings, vector store, LLM, memory contracts + providers
+    ├── runtime/                           ← AgentRuntime: OpenAIRuntime, ADKRuntime
+    ├── tools/                             ← Tool contract (execute + schema)
+    ├── protocols/mcp/                     ← planned
+    └── shared/                            ← config, factory, provider_config, exceptions
 ```
-
----
-
-# Execution Plan
-
-## Phase 1 — Foundation ✅
-
-| Component | Status | Notes |
-|---|---|---|
-| EmbeddingProvider | ✅ | Gemini + OpenAI (both 3072-dim) |
-| VectorStore | ✅ | FAISS ↔ Milvus harness passed |
-| LLMProvider | ✅ | Gemini + OpenAI |
-
----
-
-## Phase 2 — Tools and Runtime ✅
-
-| Component | Status |
-|---|---|
-| Tool base class (execute + schema) | ✅ |
-| CandidateSearchTool | ✅ |
-| SearchMemoryTool | ✅ |
-| OpenAIRuntime (run + stream + auto-save) | ✅ |
-| ADKRuntime (run + stream + auto-save) | ✅ |
-
----
-
-## Phase 3 — Memory ✅
-
-| Component | Status |
-|---|---|
-| MemoryProvider contract + MemoryRecord | ✅ |
-| VectorMemoryProvider (FAISS-backed) | ✅ |
-| Auto-save per turn in both runtimes | ✅ |
-| SearchMemoryTool for agent retrieval | ✅ |
-| sort_by_time for chronological retrieval | ✅ |
-| Per-user isolation via get_user_context() | ✅ |
-
----
-
-## Phase 4 — Provider Configuration ✅
-
-| Component | Status |
-|---|---|
-| providers.yaml — single source of truth | ✅ |
-| provider_config.py — typed loader | ✅ |
-| factory.py — build_runtime / build_llm / build_embedding | ✅ |
-
----
-
-## Phase 5 — MCP
-
-| Component | Status |
-|---|---|
-| MCPAdapter | planned |
-| MCP server | planned |
-| CandidateSearchTool exposed via MCP | planned |
-
-Success criteria: same tool runs in notebook, ADK, OpenAI, and MCP with zero business changes.
-
----
-
-# Final Validation Rule
-
-Every abstraction must pass:
-
-> Only wiring changes. Never business logic.
-
-If business logic changes: the abstraction failed.
-
-
-<img width="1600" height="900" alt="image" src="https://github.com/user-attachments/assets/1fd5aaf7-70d1-4485-8c6f-70310003035f" /> 
-

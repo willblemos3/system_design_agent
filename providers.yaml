@@ -54,15 +54,18 @@ llm:
 # ─────────────────────────────────────────────
 # Runtime (agent executor)
 # ─────────────────────────────────────────────
+#
+# Any OpenAI-compatible endpoint runs on OpenAIRuntime: set "base_url".
+# "requires: null" means no API key (local server).
 runtime:
-  primary: openai
+  primary: ollama
   fallback: null
 
   available:
     adk:
       status: ready
       class: ADKRuntime
-      model: gemini-2.0-flash
+      model: gemini-2.5-flash
       requires: GOOGLE_API_KEY
 
     openai:
@@ -70,3 +73,19 @@ runtime:
       class: OpenAIRuntime
       model: gpt-4o-mini
       requires: OPENAI_API_KEY
+
+    # Free, local — https://ollama.com  (ollama pull gemma3:12b)
+    ollama:
+      status: ready
+      class: OpenAIRuntime
+      model: gemma3:12b
+      base_url: http://localhost:11434/v1
+      requires: null
+
+    # Free tier — key from https://aistudio.google.com (no google-adk needed)
+    gemini:
+      status: ready
+      class: OpenAIRuntime
+      model: gemini-2.5-flash
+      base_url: https://generativelanguage.googleapis.com/v1beta/openai/
+      requires: GOOGLE_API_KEY
