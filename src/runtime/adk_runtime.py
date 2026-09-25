@@ -82,21 +82,36 @@ class ADKRuntime(AgentRuntime):
         self._user_id = user_id
         self._session_id = session_id or str(uuid.uuid4())
         self._verbose = verbose
+        # One ADK session per runtime session — ADK keeps the conversation history in it.
+        self._session_service = InMemorySessionService()
+        self._adk_session_id: str | None = None
 
-    def _build_runner(self, tools: list[Tool]) -> tuple[Runner, InMemorySessionService]:
+    def _build_runner(self, tools: list[Tool]) -> Runner:
         agent = LlmAgent(
             model=self._model,
             name="agent",
             instruction=self._instruction,
             tools=[_build_tool_fn(t) for t in tools],
         )
-        session_service = InMemorySessionService()
-        runner = Runner(
+        return Runner(
             agent=agent,
             app_name=_APP_NAME,
-            session_service=session_service,
+            session_service=self._session_service,
         )
-        return runner, session_service
+
+    async def _ensure_session(self) -> str:
+        if self._adk_session_id is None:
+            session = await self._session_service.create_session(
+                app_name=_APP_NAME,
+                user_id=_USER_ID,
+            )
+            self._adk_session_id = session.id
+        return self._adk_session_id
+
+    def reset(self) -> None:
+        self._session_service = InMemorySessionService()
+        self._adk_session_id = None
+        self._session_id = str(uuid.uuid4())
 
     def _save_turn(self, user_text: str, agent_text: str) -> None:
         if not self._memory or not agent_text:
@@ -120,17 +135,13 @@ class ADKRuntime(AgentRuntime):
         ))
 
     async def run(self, input: str, tools: list[Tool]) -> str:
-        runner, session_service = self._build_runner(tools)
-
-        session = await session_service.create_session(
-            app_name=_APP_NAME,
-            user_id=_USER_ID,
-        )
+        runner = self._build_runner(tools)
+        session_id = await self._ensure_session()
 
         parts = []
         async for event in runner.run_async(
             user_id=_USER_ID,
-            session_id=session.id,
+            session_id=session_id,
             new_message=Content(parts=[Part(text=input)]),
         ):
             if self._verbose and event.content:
@@ -150,18 +161,14 @@ class ADKRuntime(AgentRuntime):
         return response
 
     async def stream(self, input: str, tools: list[Tool]) -> AsyncIterator[str]:
-        runner, session_service = self._build_runner(tools)
-
-        session = await session_service.create_session(
-            app_name=_APP_NAME,
-            user_id=_USER_ID,
-        )
+        runner = self._build_runner(tools)
+        session_id = await self._ensure_session()
 
         chunks: list[str] = []
         try:
             async for event in runner.run_async(
                 user_id=_USER_ID,
-                session_id=session.id,
+                session_id=session_id,
                 new_message=Content(parts=[Part(text=input)]),
             ):
                 if event.content:

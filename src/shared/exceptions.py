@@ -8,3 +8,7 @@ class HarnessValidationError(Exception):
 
 class ToolExecutionError(Exception):
     pass
+
+
+class ExerciseNotFoundError(Exception):
+    pass

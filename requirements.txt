@@ -1,0 +1,18 @@
+# Core platform
+openai
+google-genai
+pydantic
+python-dotenv
+pyyaml
+faiss-cpu
+numpy
+pandas
+requests
+python-docx             # solutions submitted as .docx
+
+# Notebooks
+ipykernel
+
+# Optional — uncomment when needed
+# google-adk              # ADKRuntime (runtime: adk)
+# pymilvus>=2.4.0,<2.5    # MilvusVectorStore (Linux/macOS or Docker)

@@ -23,3 +23,12 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+
+# Session reports (PM agent)
+reports/
+
+# Student files (PM agent) — keep only the folder structure
+results/**
+!results/.gitkeep
+!results/diagrams/
+!results/diagrams/.gitkeep

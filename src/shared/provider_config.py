@@ -13,8 +13,9 @@ class ProviderEntry:
     status: str          # "ready" | "planned"
     class_name: str
     model: str
-    requires: str
+    requires: str | None     # env var holding the API key; None for local providers
     dim: int | None = None  # embedding only
+    base_url: str | None = None  # OpenAI-compatible endpoint (runtime only)
 
 
 @dataclass
@@ -72,8 +73,9 @@ def _parse_layer(raw: dict) -> LayerConfig:
             status=entry["status"],
             class_name=entry["class"],
             model=entry["model"],
-            requires=entry["requires"],
+            requires=entry.get("requires"),
             dim=entry.get("dim"),
+            base_url=entry.get("base_url"),
         )
         for name, entry in raw["available"].items()
     }
